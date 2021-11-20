@@ -21,20 +21,15 @@ pub enum Instr {
     Num(String),
     Var(u32),
     Lambda(Vec<Self>),
-    ParseError,
 }
 
 impl Instr {
-    pub fn has_errors(&self) -> bool {
-        match self {
-            Self::ParseError => true,
-            Self::Lambda(v) => v.iter().any(Instr::has_errors),
-            _ => false,
-        }
+    pub fn lambda<I: IntoIterator<Item = Option<Self>>>(inner: I) -> Option<Self> {
+        Some(Self::Lambda(inner.into_iter().collect::<Option<Vec<_>>>()?))
     }
 }
 
-fn parser() -> impl Parser<Token, Vec<Instr>, Error = Simple<Token>> {
+fn parser() -> impl Parser<Token, Option<Vec<Instr>>, Error = Simple<Token>> {
     use token::Dir::*;
     use Token::*;
     let int = filter_map(|span, tok| match tok {
@@ -48,21 +43,22 @@ fn parser() -> impl Parser<Token, Vec<Instr>, Error = Simple<Token>> {
     recursive(|instr| {
         instr
             .delimited_by(Bracket(L), Bracket(R))
-            .map(Instr::Lambda)
-            .or(just(Ident("K".to_string())).to(Instr::CombK))
-            .or(just(Ident("S".to_string())).to(Instr::CombS))
-            .or(just(Ident("I".to_string())).to(Instr::CombI))
-            .or(just(Ident("D".to_string())).to(Instr::CombD))
-            .or(just(Op("$".to_string())).to(Instr::Map))
-            .or(just(Op("+".to_string())).to(Instr::Add))
-            .or(just(Op("=".to_string())).to(Instr::Eq))
-            .or(int)
-            .or(var)
-            .recover_with(nested_delimiters(Bracket(L), Bracket(R), [], |_| {
-                Instr::ParseError
-            }))
+            .map(|v| Instr::lambda(v))
+            .or(just(Ident("K".to_string()))
+                .to(Instr::CombK)
+                .or(just(Ident("S".to_string())).to(Instr::CombS))
+                .or(just(Ident("I".to_string())).to(Instr::CombI))
+                .or(just(Ident("D".to_string())).to(Instr::CombD))
+                .or(just(Op("$".to_string())).to(Instr::Map))
+                .or(just(Op("+".to_string())).to(Instr::Add))
+                .or(just(Op("=".to_string())).to(Instr::Eq))
+                .or(int)
+                .or(var)
+                .map(Some))
+            .recover_with(nested_delimiters(Bracket(L), Bracket(R), [], |_| None))
             .repeated()
     })
+    .map(|v| v.into_iter().collect::<Option<Vec<_>>>())
 }
 
 pub fn parse(src_id: impl Into<String>, input: &str) -> (Option<Vec<Instr>>, Vec<Report>) {
@@ -86,10 +82,10 @@ pub fn parse(src_id: impl Into<String>, input: &str) -> (Option<Vec<Instr>>, Vec
                     .map(move |err| report_of_token_error(src_id.clone(), err)),
             )
             .collect();
-        if instrs.iter().flatten().any(Instr::has_errors) {
-            (None, tokerr)
+        if let Some(Some(instrs)) = instrs {
+            (Some(instrs), tokerr)
         } else {
-            (instrs, tokerr)
+            (None, tokerr)
         }
     } else {
         (None, tokerr.collect())
