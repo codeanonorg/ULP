@@ -7,5 +7,6 @@ edition = "2021"
 
 [dependencies]
 ariadne = "*"
+computations = { path = "../computations" }
 parser = { path = "../parser" }
 rustyline = "9"
