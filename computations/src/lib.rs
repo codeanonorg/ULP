@@ -105,7 +105,7 @@ impl Accumulator {
                 Ok(ComputationTree::BinOpSym(Self::to_binary(s)))
             }
             Sym::Iota | Sym::Len | Sym::Neg => Ok(ComputationTree::UnOpSym(Self::to_unary(s))),
-            Sym::Num(n) => Ok(ComputationTree::Lit(Literal::Num(n.clone()))),
+            Sym::Literal(n) => Ok(ComputationTree::Lit(n.clone().into())),
             Sym::Var(v) => Ok(ComputationTree::Lit(Literal::Var(v.clone()))),
             Sym::Lambda(prog) => non_linear_check(prog).and_then(|body| {
                 Ok(ComputationTree::Lambda {
@@ -180,19 +180,19 @@ pub fn check(mut prog: Vec<Sym>) -> Result<ComputationTree, &'static str> {
 
 #[cfg(test)]
 mod test {
-    use parser::Sym;
+    use parser::*;
 
     use crate::check;
 
     #[test]
     pub fn test_linear_check1() {
         let prog = vec![
-            Sym::Num("1".to_string()),
+            Sym::Literal(Lit::Num("1".to_string())),
             Sym::Map,
             Sym::Add,
             Sym::Map,
             Sym::Iota,
-            Sym::Num("2".to_string()),
+            Sym::Literal(Lit::Num("2".to_string())),
         ];
         let res = check(prog);
         println!("result: {:?}", res);
@@ -206,7 +206,7 @@ mod test {
             Sym::Add,
             Sym::Map,
             Sym::Iota,
-            Sym::Num("2".to_string()),
+            Sym::Literal(Lit::Num("2".to_string()))
         ];
         let err = check(prog);
         println!("result: {:?}", err);
@@ -221,7 +221,7 @@ mod test {
             Sym::Len,
             Sym::Map,
             Sym::Iota,
-            Sym::Num("2".to_string()),
+            Sym::Literal(Lit::Num("2".to_string())),
         ];
         let err = check(prog);
         println!("result: {:?}", err);

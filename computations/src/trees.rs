@@ -11,6 +11,15 @@ pub enum Literal {
     Table(Vec<Literal>),
 }
 
+impl From<parser::Lit> for Literal {
+    fn from(lit: parser::Lit) -> Self {
+        match lit {
+            parser::Lit::Num(n) => Self::Num(n),
+            parser::Lit::List(v) => Self::Table(v.into_iter().map(|n| n.into()).collect()),
+        }
+    }
+}
+
 /// Type of binary operation symbols
 #[derive(Clone, PartialEq, Debug)]
 pub enum BinOp {
