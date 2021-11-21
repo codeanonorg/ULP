@@ -46,6 +46,14 @@ impl Accumulator {
         }
     }
 
+    fn finish(self) -> Option<ComputationTree> {
+        if self.is_done() {
+            Some(self.acc)
+        } else {
+            None
+        }
+    }
+
     fn to_unary(s: &Sym) -> UnOp {
         match s {
             Sym::Len => UnOp::Len,
@@ -79,10 +87,12 @@ impl Accumulator {
 
     /// TODO : captures in lambdas ??
     fn count_variables(prog: &Vec<Sym>) -> u32 {
-        prog.iter().fold(0, |acc, s| match s {
-            Sym::Var(_) => acc + 1,
-            _ => acc,
-        })
+        prog.iter()
+            .map(|s| match s {
+                Sym::Var(_) => 1,
+                _ => 0,
+            })
+            .sum()
     }
 
     /// Convert an arbitrary symbol to a computation tree
@@ -148,17 +158,13 @@ fn linear_check(prog: &[Sym]) -> Result<ComputationTree, &'static str> {
         .try_fold(first, |acc, s| acc.next(s))
         .and_then(|a| {
             // println!("debug {:?}", a);
-            if a.is_done() {
-                Ok(a.acc)
-            } else {
-                Err("Symbols remaining")
-            }
+            a.finish().ok_or("Symbols remaining")
         })
 }
 
 // Check that a sequence of symbols is well formed (in the context of a lambda)
 fn non_linear_check(_prog: &[Sym]) -> Result<ComputationTree, &'static str> {
-    todo!()
+    Err("TODO: Lambdas not supported")
 }
 
 /// Check that an ULP program is well formed and returns its associated
