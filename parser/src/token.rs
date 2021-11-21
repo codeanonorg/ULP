@@ -45,6 +45,9 @@ pub(crate) fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<c
     let op = just('+')
         .or(just('='))
         .or(just('$'))
+        .or(just('i'))
+        .or(just('#'))
+        .or(just('!'))
         .map(|c| c.to_string())
         .map(Op);
     let ident = ident().map(Ident);

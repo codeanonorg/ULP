@@ -15,7 +15,13 @@ pub enum Sym {
     CombD,
     CombI,
     Map,
-    Comp,
+    Iota,
+    Len,
+    Reduce,
+    Filter,
+    Neg,
+    And,
+    Or,
     Eq,
     Add,
     Num(String),
@@ -49,9 +55,16 @@ fn parser() -> impl Parser<Token, Option<Vec<Sym>>, Error = Simple<Token>> {
                 .or(just(Ident("S".to_string())).to(Sym::CombS))
                 .or(just(Ident("I".to_string())).to(Sym::CombI))
                 .or(just(Ident("D".to_string())).to(Sym::CombD))
+                .or(just(Op("i".to_string())).to(Sym::Iota))
                 .or(just(Op("$".to_string())).to(Sym::Map))
                 .or(just(Op("+".to_string())).to(Sym::Add))
+                .or(just(Op("#".to_string())).to(Sym::Len))
                 .or(just(Op("=".to_string())).to(Sym::Eq))
+                .or(just(Op("/".to_string())).to(Sym::Reduce))
+                .or(just(Op("&".to_string())).to(Sym::And))
+                .or(just(Op("|".to_string())).to(Sym::Or))
+                .or(just(Op("!".to_string())).to(Sym::Neg))
+                .or(just(Op("\\".to_string())).to(Sym::Filter))
                 .or(int)
                 .or(var)
                 .map(Some))

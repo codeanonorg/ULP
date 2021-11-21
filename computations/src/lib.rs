@@ -1,132 +1,173 @@
-use std::borrow::Borrow;
 #[allow(dead_code)]
-use std::fmt;
-
-mod checker;
 mod trees;
 
 use parser::Sym;
-use trees::{ComputationTree, Literal};
+use trees::{ComputationTree, Literal, UnOp};
 
 use crate::trees::{BinOp, Combinator};
 
-fn count_variables(prog: &Vec<Sym>) -> u32 {
-    prog.iter().fold(0, |acc, s| match s {
-        Sym::Var(_) => acc + 1,
-        _ => acc,
-    })
+// States for our state machine
+// WaitForOp -> We are waiting for an operator as the next symbol
+// WaitForVal(op) -> We are waiting for at least one symbol
+//  This symbol will be the second parameter for the binary operator "op"
+#[derive(Debug)]
+enum State {
+    WaitForOp,
+    WaitForVal(BinOp),
 }
 
-fn to_tree<'a>(s: &Sym) -> Result<ComputationTree, &'static str> {
-    match s {
-        Sym::CombS => Ok(ComputationTree::CombOp(Combinator::S)),
-        Sym::CombK => Ok(ComputationTree::CombOp(Combinator::K)),
-        Sym::CombD => Ok(ComputationTree::CombOp(Combinator::D)),
-        Sym::CombI => Ok(ComputationTree::CombOp(Combinator::I)),
-        Sym::Map => Ok(ComputationTree::BinOpSym(BinOp::Map)),
-        Sym::Comp => unreachable!(),
-        Sym::Eq => Ok(ComputationTree::BinOpSym(BinOp::Eq)),
-        Sym::Add => Ok(ComputationTree::BinOpSym(BinOp::Add)),
-        Sym::Num(n) => Ok(ComputationTree::Lit(Literal::Num(n.clone()))),
-        Sym::Var(v) => Ok(ComputationTree::Lit(Literal::Var(v.clone()))),
-        Sym::Lambda(prog) => non_linear_check(prog).and_then(|body| {
-            Ok(ComputationTree::Lambda {
-                vars: count_variables(prog),
-                body: Box::new(body),
+// A datastructure to represent the current
+// Computation tree together with the current state
+#[derive(Debug)]
+struct Accumulator {
+    state: State,
+    acc: ComputationTree,
+}
+
+impl Accumulator {
+    // Build a new accumulator containing only the symbol "s" viewed
+    // as a computation tree
+    fn new(s: &Sym) -> Result<Self, &'static str> {
+        Self::to_tree(s).and_then(|acc| {
+            Ok(Accumulator {
+                state: State::WaitForOp,
+                acc,
             })
-        }),
+        })
     }
-}
 
-struct State {
-    consumed: usize,
-    ignore: bool,
-    accumulator: ComputationTree,
-}
-
-impl State {
-    fn new(acc: ComputationTree) -> Self {
-        State {
-            consumed: 1,
-            ignore: false,
-            accumulator: acc,
+    // Check if the state described by the accumulator is
+    // accepting or not.
+    // If we are waiting for an
+    fn is_done(&self) -> bool {
+        match self.state {
+            State::WaitForOp => true,
+            State::WaitForVal(_) => false,
         }
     }
 
-    fn ignore(self) -> Self {
-        State {
-            ignore: false,
-            ..self
+    fn to_unary(s: &Sym) -> UnOp {
+        match s {
+            Sym::Len => UnOp::Len,
+            Sym::Neg => UnOp::Neg,
+            Sym::Iota => UnOp::Iota,
+            _ => unreachable!(),
         }
     }
 
-    fn accumulate(self, op: BinOp, lhs: ComputationTree) -> Self {
-        State {
-            consumed: self.consumed + 1,
-            ignore: true,
-            accumulator: ComputationTree::BinaryOp {
-                op,
-                lhs: Box::new(lhs),
-                rhs: Box::new(self.accumulator),
-            },
+    fn to_binary(s: &Sym) -> BinOp {
+        match s {
+            Sym::Map => BinOp::Map,
+            Sym::Eq => BinOp::Eq,
+            Sym::Add => BinOp::Add,
+            Sym::And => BinOp::And,
+            Sym::Or => BinOp::Or,
+            _ => unreachable!(),
         }
     }
 
-    fn is_done(&self, prog: &[Sym]) -> bool {
-        self.consumed + 1 == prog.len()
+    fn to_comb(s: &Sym) -> Combinator {
+        match s {
+            Sym::CombS => Combinator::S,
+            Sym::CombK => Combinator::K,
+            Sym::CombD => Combinator::D,
+            Sym::CombI => Combinator::I,
+            _ => unreachable!(),
+        }
     }
-}
 
-fn linear_check<'a>(prog: &[Sym]) -> Result<ComputationTree, &'static str> {
-    let next = &prog[1..];
-    let iter = &mut next.windows(2);
-    let acc = match &prog[0] {
-        Sym::Num(n) => Ok(ComputationTree::Lit(Literal::Num(n.clone()))),
-        Sym::Var(v) => Ok(ComputationTree::Lit(Literal::Var(v.clone()))),
-        _ => Err("Literal expected"),
-    }?;
-    iter.try_fold(State::new(acc), |state, pair| {
-        if state.ignore {
-            Ok(state.ignore())
-        } else {
-            println!("({:?}, {:?})", pair[0], pair[1]);
-            match pair[0] {
-                Sym::CombS | Sym::CombK | Sym::CombD | Sym::CombI => Err("Unexpected combinator"),
-                Sym::Map => {
-                    to_tree(&pair[1]).and_then(|tree| Ok(state.accumulate(BinOp::Map, tree)))
-                }
-                Sym::Add => {
-                    to_tree(&pair[1]).and_then(|tree| Ok(state.accumulate(BinOp::Add, tree)))
-                }
-                Sym::Eq => to_tree(&pair[1]).and_then(|tree| Ok(state.accumulate(BinOp::Eq, tree))),
-                Sym::Comp => todo!(),
-                Sym::Num(_) => Err("expected operator, found 'Num'"),
-                Sym::Var(_) => Err("expected operator, found 'Var'"),
-                Sym::Lambda(_) => Err("expected operator, found 'Lambda'"),
+    /// TODO : captures in lambdas ??
+    fn count_variables(prog: &Vec<Sym>) -> u32 {
+        prog.iter().fold(0, |acc, s| match s {
+            Sym::Var(_) => acc + 1,
+            _ => acc,
+        })
+    }
+
+    /// Convert an arbitrary symbol to a computation tree
+    fn to_tree<'a>(s: &Sym) -> Result<ComputationTree, &'static str> {
+        match s {
+            Sym::CombS | Sym::CombK | Sym::CombD | Sym::CombI => {
+                Ok(ComputationTree::CombOp(Self::to_comb(s)))
             }
+            Sym::Map | Sym::Eq | Sym::Add | Sym::And | Sym::Or | Sym::Filter | Sym::Reduce => {
+                Ok(ComputationTree::BinOpSym(Self::to_binary(s)))
+            }
+            Sym::Iota | Sym::Len | Sym::Neg => Ok(ComputationTree::UnOpSym(Self::to_unary(s))),
+            Sym::Num(n) => Ok(ComputationTree::Lit(Literal::Num(n.clone()))),
+            Sym::Var(v) => Ok(ComputationTree::Lit(Literal::Var(v.clone()))),
+            Sym::Lambda(prog) => non_linear_check(prog).and_then(|body| {
+                Ok(ComputationTree::Lambda {
+                    vars: Self::count_variables(prog),
+                    body: Box::new(body),
+                })
+            }),
         }
-    })
-    .and_then(|state| {
-        if state.is_done(prog) {
-            Ok(state.accumulator)
-        } else {
-            println!("consumed : {}", state.consumed);
-            Err("elements remaining")
+    }
+
+    /// Given an accumulator and a symbol, next computes a new accumulator
+    /// and consume the symbol to extend the current computation tree.
+    fn next(self, s: &Sym) -> Result<Accumulator, &'static str> {
+        match self.state {
+            State::WaitForOp => match s {
+                Sym::Map | Sym::Eq | Sym::Filter | Sym::Reduce | Sym::Add | Sym::And | Sym::Or => {
+                    Ok(Accumulator {
+                        state: State::WaitForVal(Self::to_binary(s)),
+                        ..self
+                    })
+                }
+                Sym::Iota | Sym::Len => Ok(Accumulator {
+                    state: State::WaitForOp,
+                    acc: ComputationTree::UnaryOp {
+                        op: Self::to_unary(s),
+                        lhs: Box::new(self.acc),
+                    },
+                }),
+                _ => Err("Expected operator"),
+            },
+            State::WaitForVal(op) => Self::to_tree(s).and_then(|tree| {
+                Ok(Accumulator {
+                    state: State::WaitForOp,
+                    acc: ComputationTree::BinaryOp {
+                        op,
+                        lhs: Box::new(tree),
+                        rhs: Box::new(self.acc),
+                    },
+                })
+            }),
         }
-    })
+    }
 }
 
-fn non_linear_check<'a>(prog: &[Sym]) -> Result<ComputationTree, &'static str> {
+// Check that a sequence of symbols is well formed
+fn linear_check(prog: &[Sym]) -> Result<ComputationTree, &'static str> {
+    let first = Accumulator::new(&prog[0])?;
+    let next = &prog[1..];
+    next.iter()
+        .try_fold(first, |acc, s| acc.next(s))
+        .and_then(|a| {
+            // println!("debug {:?}", a);
+            if a.is_done() {
+                Ok(a.acc)
+            } else {
+                Err("Symbols remaining")
+            }
+        })
+}
+
+// Check that a sequence of symbols is well formed (in the context of a lambda)
+fn non_linear_check(_prog: &[Sym]) -> Result<ComputationTree, &'static str> {
     todo!()
 }
 
-pub fn check<'a>(prog: &Vec<Sym>) -> Result<ComputationTree, &'static str> {
+/// Check that an ULP program is well formed and returns its associated
+/// computation tree
+pub fn check(prog: Vec<Sym>) -> Result<ComputationTree, &'static str> {
     if prog.len() == 0 {
         Err("No symbols")
     } else {
         let prog = &mut prog.clone();
         prog.reverse();
-        println!("debug : {:?}", prog);
         linear_check(&prog.clone())
     }
 }
@@ -140,13 +181,13 @@ mod test {
     #[test]
     pub fn test_linear_check() {
         let prog = vec![
-            // Sym::Num("1".to_string()),
+            Sym::Num("1".to_string()),
             Sym::Map,
             Sym::Add,
             Sym::Map,
             Sym::Num("2".to_string()),
         ];
-        match check(&prog) {
+        match check(prog) {
             Ok(res) => println!("Success: {:?}", res),
             Err(err) => println!("Error: {:?}", err),
         };

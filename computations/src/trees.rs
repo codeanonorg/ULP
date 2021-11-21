@@ -1,6 +1,7 @@
 use std::fmt;
 
-/// Type of reserved symbols used in ULP
+/// Type of literals
+/// Literals are constant values
 #[derive(Clone, PartialEq, Debug)]
 pub enum Literal {
     True,
@@ -10,15 +11,19 @@ pub enum Literal {
     Table(Vec<Literal>),
 }
 
+/// Type of binary operation symbols
 #[derive(Clone, PartialEq, Debug)]
 pub enum BinOp {
     Map,
+    Filter,
+    Reduce,
     Eq,
     Add,
     And,
     Or,
 }
 
+/// Type of unary operation symbols
 #[derive(Clone, PartialEq, Debug)]
 pub enum UnOp {
     Len,
@@ -26,6 +31,7 @@ pub enum UnOp {
     Iota,
 }
 
+/// Type of combinator symbols
 #[derive(Clone, PartialEq, Debug)]
 pub enum Combinator {
     S,
@@ -34,6 +40,9 @@ pub enum Combinator {
     D,
 }
 
+/// Type of Computation Trees
+/// A computation tree represents a structured sequence
+/// of computations to perform
 #[derive(Clone, Debug)]
 pub enum ComputationTree {
     BinOpSym(BinOp),
