@@ -9,7 +9,7 @@ use report::{report_of_char_error, report_of_token_error};
 use token::lexer;
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Instr {
+pub enum Sym {
     CombS,
     CombK,
     CombD,
@@ -23,35 +23,35 @@ pub enum Instr {
     Lambda(Vec<Self>),
 }
 
-impl Instr {
+impl Sym {
     pub fn lambda<I: IntoIterator<Item = Option<Self>>>(inner: I) -> Option<Self> {
         Some(Self::Lambda(inner.into_iter().collect::<Option<Vec<_>>>()?))
     }
 }
 
-fn parser() -> impl Parser<Token, Option<Vec<Instr>>, Error = Simple<Token>> {
+fn parser() -> impl Parser<Token, Option<Vec<Sym>>, Error = Simple<Token>> {
     use token::Dir::*;
     use Token::*;
     let int = filter_map(|span, tok| match tok {
-        Num(n) => Ok(Instr::Num(n)),
+        Num(n) => Ok(Sym::Num(n)),
         t => Err(Simple::expected_input_found(span, vec![], Some(t))),
     });
     let var = filter_map(|span, tok| match tok {
-        Var(i) => Ok(Instr::Var(i)),
+        Var(i) => Ok(Sym::Var(i)),
         t => Err(Simple::expected_input_found(span, vec![], Some(t))),
     });
     recursive(|instr| {
         instr
             .delimited_by(Bracket(L), Bracket(R))
-            .map(|v| Instr::lambda(v))
+            .map(|v| Sym::lambda(v))
             .or(just(Ident("K".to_string()))
-                .to(Instr::CombK)
-                .or(just(Ident("S".to_string())).to(Instr::CombS))
-                .or(just(Ident("I".to_string())).to(Instr::CombI))
-                .or(just(Ident("D".to_string())).to(Instr::CombD))
-                .or(just(Op("$".to_string())).to(Instr::Map))
-                .or(just(Op("+".to_string())).to(Instr::Add))
-                .or(just(Op("=".to_string())).to(Instr::Eq))
+                .to(Sym::CombK)
+                .or(just(Ident("S".to_string())).to(Sym::CombS))
+                .or(just(Ident("I".to_string())).to(Sym::CombI))
+                .or(just(Ident("D".to_string())).to(Sym::CombD))
+                .or(just(Op("$".to_string())).to(Sym::Map))
+                .or(just(Op("+".to_string())).to(Sym::Add))
+                .or(just(Op("=".to_string())).to(Sym::Eq))
                 .or(int)
                 .or(var)
                 .map(Some))
@@ -61,7 +61,7 @@ fn parser() -> impl Parser<Token, Option<Vec<Instr>>, Error = Simple<Token>> {
     .map(|v| v.into_iter().collect::<Option<Vec<_>>>())
 }
 
-pub fn parse(src_id: impl Into<String>, input: &str) -> (Option<Vec<Instr>>, Vec<Report>) {
+pub fn parse(src_id: impl Into<String>, input: &str) -> (Option<Vec<Sym>>, Vec<Report>) {
     let src_id = src_id.into();
     let slen = input.len();
     let (tokens, tokerr) = lexer().then_ignore(end()).parse_recovery(input);
@@ -95,7 +95,7 @@ pub fn parse(src_id: impl Into<String>, input: &str) -> (Option<Vec<Instr>>, Vec
 #[cfg(test)]
 mod tests {
     use super::*;
-    use Instr::*;
+    use Sym::*;
     macro_rules! assert_parse {
         ($input:expr, [$($e:expr),*]) => {
             {
