@@ -61,7 +61,8 @@ impl Accumulator {
             Sym::Eq => BinOp::Eq,
             Sym::Add => BinOp::Add,
             Sym::And => BinOp::And,
-            Sym::Or => BinOp::Or,
+            Sym::Reduce => BinOp::Reduce,
+            Sym::Filter => BinOp::Filter,
             _ => unreachable!(),
         }
     }
@@ -179,17 +180,46 @@ mod test {
     use crate::check;
 
     #[test]
-    pub fn test_linear_check() {
+    pub fn test_linear_check1() {
         let prog = vec![
             Sym::Num("1".to_string()),
             Sym::Map,
             Sym::Add,
             Sym::Map,
+            Sym::Iota,
             Sym::Num("2".to_string()),
         ];
-        match check(prog) {
-            Ok(res) => println!("Success: {:?}", res),
-            Err(err) => println!("Error: {:?}", err),
-        };
+        let res = check(prog);
+        println!("result: {:?}", res);
+        assert!(res.is_ok())
+    }
+
+    #[test]
+    pub fn test_linear_check2() {
+        let prog = vec![
+            Sym::Map,
+            Sym::Add,
+            Sym::Map,
+            Sym::Iota,
+            Sym::Num("2".to_string()),
+        ];
+        let err = check(prog);
+        println!("result: {:?}", err);
+        assert!(err.is_err())
+    }
+
+    #[test]
+    pub fn test_linear_check3() {
+        let prog = vec![
+            Sym::Add,
+            Sym::Reduce,
+            Sym::Len,
+            Sym::Map,
+            Sym::Iota,
+            Sym::Num("2".to_string()),
+        ];
+        let err = check(prog);
+        println!("result: {:?}", err);
+        assert!(err.is_ok())
     }
 }
