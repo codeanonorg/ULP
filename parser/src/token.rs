@@ -46,10 +46,7 @@ impl fmt::Display for Token {
 
 pub(crate) fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
     let op = filter(char::is_ascii_punctuation)
-        .repeated()
-        .at_least(1)
-        .collect()
-        .map(Op);
+        .map(|c| Op(c.to_string()));
     let ident = ident().map(Ident);
     let num = int(10).map(Num);
     let parens = just('(').to(Paren(L)).or(just(')').to(Paren(R)));
