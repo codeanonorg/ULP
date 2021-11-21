@@ -48,7 +48,7 @@ fn parser() -> impl Parser<Token, Option<Vec<Sym>>, Error = Simple<Token>> {
     });
     recursive(|instr| {
         instr
-            .delimited_by(Bracket(L), Bracket(R))
+            .delimited_by(Brace(L), Brace(R))
             .map(|v| Sym::lambda(v))
             .or(just(Ident("K".to_string()))
                 .to(Sym::CombK)
@@ -68,7 +68,7 @@ fn parser() -> impl Parser<Token, Option<Vec<Sym>>, Error = Simple<Token>> {
                 .or(int)
                 .or(var)
                 .map(Some))
-            .recover_with(nested_delimiters(Bracket(L), Bracket(R), [], |_| None))
+            .recover_with(nested_delimiters(Brace(L), Brace(R), [], |_| None))
             .repeated()
     })
     .map(|v| v.into_iter().collect::<Option<Vec<_>>>())
@@ -82,7 +82,7 @@ pub fn parse(src_id: impl Into<String>, input: &str) -> (Option<Vec<Sym>>, Vec<R
         let src_id = src_id.clone();
         move |err| report_of_char_error(src_id.clone(), err)
     });
-    if let Some(tokens) = tokens {
+    if let Some(tokens) = dbg!(tokens) {
         let (instrs, err) = parser()
             .then_ignore(end())
             .parse_recovery(Stream::from_iter(
