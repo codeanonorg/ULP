@@ -20,7 +20,7 @@ F ` flip (λf.λx.λy.f y x)
 D ` generalized substitution (λf.λg.λh.λx. f (g x) (h x))
 K ` constant function λx.λy.x
 I ` identity function λx.x
-S ` substitution (λf.λg.λh.λx. f (g x) (h x)) = {D w I}
+S ` substitution (λf.λg.λx. f x (g x)) = {D w I}
 ```
 
 ### Lambdas
@@ -43,7 +43,7 @@ S ` substitution (λf.λg.λh.λx. f (g x) (h x)) = {D w I}
 ### Tableaux
 
 ```
-# ` longueurs
+# ` length
 $ ` map
 / ` reduce
 \ ` filter
