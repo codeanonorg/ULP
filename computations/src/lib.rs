@@ -163,13 +163,12 @@ fn non_linear_check(_prog: &[Sym]) -> Result<ComputationTree, &'static str> {
 
 /// Check that an ULP program is well formed and returns its associated
 /// computation tree
-pub fn check(prog: Vec<Sym>) -> Result<ComputationTree, &'static str> {
+pub fn check(mut prog: Vec<Sym>) -> Result<ComputationTree, &'static str> {
     if prog.len() == 0 {
         Err("No symbols")
     } else {
-        let prog = &mut prog.clone();
         prog.reverse();
-        linear_check(&prog.clone())
+        linear_check(&prog)
     }
 }
 
