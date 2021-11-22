@@ -1,4 +1,4 @@
-use std::ops::{Range, Deref};
+use std::{error::Error, fmt::{self, Display}, ops::{Range, Deref}};
 
 pub type Span = Range<usize>;
 
@@ -19,6 +19,24 @@ impl<T> Deref for Spanned<T> {
 impl<T> From<Spanned<T>> for (T, Span) {
     fn from(s: Spanned<T>) -> Self {
         (s.value, s.span)
+    }
+}
+
+impl<T: Display> fmt::Display for Spanned<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { 
+        write!(f, "{}:{}: {}", self.span.start, self.span.end, self.value)
+    }
+}
+
+impl<T: Error> Error for Spanned<T> {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        self.value.source()
+    }
+}
+
+impl<T> Spanned<T> {
+    pub fn as_ref(&self) -> Spanned<&T> {
+        (&self.value).spanned(self.span.clone())
     }
 }
 
