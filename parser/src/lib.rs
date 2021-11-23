@@ -13,7 +13,7 @@ pub use spanned::*;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Lit {
     Num(String),
-    List(Vec<Self>),
+    List(Vec<Spanned<Self>>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -43,14 +43,20 @@ impl Sym {
     }
 }
 
-fn literal() -> impl Parser<Token, Lit, Error = Simple<Token>> {
-    use Token::*;
+fn literal() -> impl Parser<Token, Spanned<Lit>, Error = Simple<Token>> {
     use token::Dir::*;
+    use Token::*;
     let int = filter_map(|span, tok| match tok {
-        Num(n) => Ok(Lit::Num(n)),
+        Num(n) => Ok(Lit::Num(n).spanned(span)),
         t => Err(Simple::expected_input_found(span, vec![], Some(t))),
     });
-    recursive(|lit| lit.repeated().at_least(1).delimited_by(Bracket(L), Bracket(R)).map(Lit::List).or(int))
+    recursive(|lit| {
+        lit.repeated()
+            .at_least(1)
+            .delimited_by(Bracket(L), Bracket(R))
+            .map_with_span(|l, span| Lit::List(l).spanned(span))
+            .or(int)
+    })
 }
 
 fn parser() -> impl Parser<Token, Option<Vec<Spanned<Sym>>>, Error = Simple<Token>> {
@@ -60,7 +66,7 @@ fn parser() -> impl Parser<Token, Option<Vec<Spanned<Sym>>>, Error = Simple<Toke
         Var(i) => Ok(Sym::Var(i)),
         t => Err(Simple::expected_input_found(span, vec![], Some(t))),
     });
-    let lit = literal().map(Sym::Literal);
+    let lit = literal().map(|l| Sym::Literal(l.value));
     recursive(|instr| {
         instr
             .delimited_by(Brace(L), Brace(R))
@@ -125,19 +131,22 @@ mod tests {
     use super::*;
     use Sym::*;
     macro_rules! assert_parse {
-        ($input:expr, [$($e:expr),*]) => {
-            {
-                let input = $input;
-                let (res, err) = parse("<test>", input);
-                insta::assert_display_snapshot!(err.into_iter().map(|r| {
+        ($input:expr, [$($e:expr),*]) => {{
+            let input = $input;
+            let (res, err) = parse("<test>", input);
+            insta::assert_display_snapshot!(err
+                .into_iter()
+                .map(|r| {
                     use ariadne::Source;
                     let mut s = ::std::io::Cursor::new(Vec::new());
-                    r.write(("<test>".into(), Source::from(input)), &mut s).unwrap();
+                    r.write(("<test>".into(), Source::from(input)), &mut s)
+                        .unwrap();
                     String::from_utf8_lossy(&s.into_inner()).to_string()
-                }).collect::<Vec<_>>().join("\n"));
-                insta::assert_debug_snapshot!(res);
-            }
-        };
+                })
+                .collect::<Vec<_>>()
+                .join("\n"));
+            insta::assert_debug_snapshot!(res);
+        }};
     }
     #[test]
     fn test_ski() {

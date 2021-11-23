@@ -1,6 +1,9 @@
-use ariadne::{Label, ReportKind, Source};
-use computations::check;
-use parser::parse;
+use ariadne::{Color, Label, ReportKind, Source};
+use computations::{
+    check,
+    types::{self, Type},
+};
+use parser::{parse, spans, SpannedExt};
 use rustyline::{error::ReadlineError, Editor};
 use std::ops::Range;
 
@@ -24,7 +27,18 @@ fn main() {
                 }
                 if let Some(ast) = ast {
                     match check(ast) {
-                        Ok(comp) => println!("Computation {:#?}", comp),
+                        Ok(comp) => {
+                            match Type::infer(comp.as_ref()) {
+                                Ok(ty) => println!("{:#?}\n\t-> {}", comp, ty),
+                                Err(err) => err.value.labels().into_iter().fold(Report::build(ReportKind::Error, "<repl>", err.span.start)
+                                    .with_message("Type error")
+                                    .with_label(Label::new(("<repl>".to_string(), err.span)).with_message(err.value).with_color(Color::Red))
+                                    .with_note("The expression could not be correctly validated for type consistency"), |r, lspan| r.with_label(Label::new(("<repl>".to_string(), lspan.span)).with_color(Color::Blue).with_message(lspan.value)))
+                                    .finish()
+                                    .eprint(("<repl>".to_string(), Source::from(&line)))
+                                    .unwrap()
+                            }
+                        },
                         Err(err) => Report::build(ReportKind::Error, "<repl>", err.span.start)
                             .with_label(Label::new(("<repl>".into(), err.span)).with_color(ariadne::Color::Red).with_message(err.value.to_string()))
                             .with_message("Check error")

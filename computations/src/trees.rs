@@ -1,3 +1,4 @@
+use parser::Spanned;
 use std::fmt;
 
 /// Type of literals
@@ -8,14 +9,14 @@ pub enum Literal {
     False,
     Num(String),
     Var(u32),
-    Table(Vec<Literal>),
+    Table(Vec<Spanned<Literal>>),
 }
 
 impl From<parser::Lit> for Literal {
     fn from(lit: parser::Lit) -> Self {
         match lit {
             parser::Lit::Num(n) => Self::Num(n),
-            parser::Lit::List(v) => Self::Table(v.into_iter().map(|n| n.into()).collect()),
+            parser::Lit::List(v) => Self::Table(v.into_iter().map(|n| n.map(Literal::from)).collect()),
         }
     }
 }
@@ -60,20 +61,20 @@ pub enum ComputationTree {
     Lit(Literal),
     BinaryOp {
         op: BinOp,
-        lhs: Box<Self>,
-        rhs: Box<Self>,
+        lhs: Spanned<Box<Self>>,
+        rhs: Spanned<Box<Self>>,
     },
     UnaryOp {
         op: UnOp,
-        lhs: Box<Self>,
+        lhs: Spanned<Box<Self>>,
     },
     Lambda {
         vars: u32,
-        body: Box<ComputationTree>,
+        body: Spanned<Box<Self>>,
     },
     App {
-        lhs: Box<ComputationTree>,
-        rhs: Box<ComputationTree>,
+        lhs: Spanned<Box<Self>>,
+        rhs: Spanned<Box<Self>>,
     },
 }
 

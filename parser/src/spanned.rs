@@ -38,6 +38,31 @@ impl<T> Spanned<T> {
     pub fn as_ref(&self) -> Spanned<&T> {
         (&self.value).spanned(self.span.clone())
     }
+
+    pub fn as_deref(&self) -> Spanned<&T::Target> where T: std::ops::Deref {
+        self.value.deref().spanned(self.span.clone())
+    }
+
+    pub fn map<U>(self, map: impl FnOnce(T) -> U) -> Spanned<U> {
+        map(self.value).spanned(self.span)
+    }
+}
+
+impl<T, E> Spanned<Result<T, E>> {
+    pub fn transpose_result(self) -> Result<Spanned<T>, E> {
+        self.value.map(|t| t.spanned(self.span))
+    }
+}
+
+pub fn spans<T>(spans: &[Spanned<T>]) -> Span {
+    match spans.len() {
+        0 => 0..0,
+        _ => {
+            let first = spans.first().map(|s| s.span.start).unwrap();
+            let last = spans.last().map(|s| s.span.end).unwrap();
+            first..last
+        }
+    }
 }
 
 pub trait SpannedExt: Sized {

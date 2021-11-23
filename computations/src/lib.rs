@@ -1,7 +1,8 @@
 #[allow(dead_code)]
 mod trees;
+pub mod types;
 
-use parser::{Spanned, SpannedExt, Sym};
+use parser::{Spanned, SpannedExt, Sym, spans};
 use trees::{ComputationTree, Literal, UnOp};
 
 use crate::trees::{BinOp, Combinator};
@@ -36,7 +37,7 @@ enum State {
 #[derive(Debug)]
 struct Accumulator {
     state: State,
-    acc: ComputationTree,
+    acc: Spanned<ComputationTree>,
 }
 
 impl Accumulator {
@@ -61,7 +62,7 @@ impl Accumulator {
         }
     }
 
-    fn finish(self) -> Option<ComputationTree> {
+    fn finish(self) -> Option<Spanned<ComputationTree>> {
         if self.is_done() {
             Some(self.acc)
         } else {
@@ -111,31 +112,29 @@ impl Accumulator {
     }
 
     /// Convert an arbitrary symbol to a computation tree
-    fn to_tree<'a>(s: Spanned<&Sym>) -> Result<ComputationTree, Error> {
-        match s.value {
+    fn to_tree<'a>(s: Spanned<&Sym>) -> Result<Spanned<ComputationTree>, Error> {
+        s.map(|s| match s {
             Sym::CombS | Sym::CombK | Sym::CombD | Sym::CombI => {
-                Ok(ComputationTree::CombOp(Self::to_comb(s.value)))
+                Ok(ComputationTree::CombOp(Self::to_comb(s)))
             }
             Sym::Map | Sym::Eq | Sym::Add | Sym::And | Sym::Or | Sym::Filter | Sym::Reduce => {
-                Ok(ComputationTree::BinOpSym(Self::to_binary(s.value)))
+                Ok(ComputationTree::BinOpSym(Self::to_binary(s)))
             }
             Sym::Iota | Sym::Len | Sym::Neg => {
-                Ok(ComputationTree::UnOpSym(Self::to_unary(s.value)))
+                Ok(ComputationTree::UnOpSym(Self::to_unary(s)))
             }
             Sym::Literal(n) => Ok(ComputationTree::Lit(n.clone().into())),
             Sym::Var(v) => Ok(ComputationTree::Lit(Literal::Var(v.clone()))),
             Sym::Lambda(prog) => non_linear_check(
                 prog.iter().map(|s| &s.value).spanned(
-                    prog.iter()
-                        .map(|s| &s.span)
-                        .fold(0..0, |l, r| l.start..r.end),
+                    spans(prog),
                 ),
             )
             .map(|body| ComputationTree::Lambda {
                 vars: Self::count_variables(prog.iter().map(|s| &s.value)),
-                body: Box::new(body),
+                body: body.map(Box::new),
             }),
-        }
+        }).transpose_result()
     }
 
     /// Given an accumulator and a symbol, next computes a new accumulator
@@ -153,18 +152,18 @@ impl Accumulator {
                     state: State::WaitForOp,
                     acc: ComputationTree::UnaryOp {
                         op: Self::to_unary(s.value),
-                        lhs: Box::new(self.acc),
-                    },
+                        lhs: self.acc.map(Box::new),
+                    }.spanned(s.span),
                 }),
                 _ => Err(ComputationError::ExpectedOperator.spanned(s.span)),
             },
-            State::WaitForVal(op) => Self::to_tree(s).map(|tree| Accumulator {
+            State::WaitForVal(op) => Self::to_tree(s.clone()).map(|tree| Accumulator {
                 state: State::WaitForOp,
                 acc: ComputationTree::BinaryOp {
                     op,
-                    lhs: Box::new(tree),
-                    rhs: Box::new(self.acc),
-                },
+                    lhs: tree.map(Box::new),
+                    rhs: self.acc.map(Box::new),
+                }.spanned(s.span),
             }),
         }
     }
@@ -173,7 +172,7 @@ impl Accumulator {
 // Check that a sequence of symbols is well formed
 fn linear_check<'a, I: IntoIterator<Item = Spanned<&'a Sym>>>(
     prog: Spanned<I>,
-) -> Result<ComputationTree, Error> {
+) -> Result<Spanned<ComputationTree>, Error> {
     let mut it = prog.value.into_iter();
     let acc = Accumulator::new(
         it.next()
@@ -189,13 +188,13 @@ fn linear_check<'a, I: IntoIterator<Item = Spanned<&'a Sym>>>(
 // Check that a sequence of symbols is well formed (in the context of a lambda)
 fn non_linear_check<'a, I: IntoIterator<Item = &'a Sym>>(
     prog: Spanned<I>,
-) -> Result<ComputationTree, Error> {
+) -> Result<Spanned<ComputationTree>, Error> {
     Err(ComputationError::UnsupportedFeature("non_linear_check").spanned(prog.span))
 }
 
 /// Check that an ULP program is well formed and returns its associated
 /// computation tree
-pub fn check(prog: Vec<Spanned<Sym>>) -> Result<ComputationTree, Error> {
+pub fn check(prog: Vec<Spanned<Sym>>) -> Result<Spanned<ComputationTree>, Error> {
     let span = prog
         .iter()
         .map(|s| s.span.clone())
