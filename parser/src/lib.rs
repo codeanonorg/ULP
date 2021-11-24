@@ -1,12 +1,11 @@
 mod report;
-mod spanned;
 mod token;
 
 use crate::token::Token;
 use chumsky::{prelude::*, Stream};
-use report::Report;
 use report::{report_of_char_error, report_of_token_error};
 use token::lexer;
+use utils::{report::Report, Positioned, PositionedExt, Reference};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Lit {
@@ -32,26 +31,32 @@ pub enum Sym {
     Add,
     Literal(Lit),
     Var(u32),
-    Lambda(Vec<Self>),
+    Lambda(Vec<Positioned<Self>>),
 }
 
 impl Sym {
-    pub fn lambda<I: IntoIterator<Item = Option<Self>>>(inner: I) -> Option<Self> {
+    pub fn lambda<I: IntoIterator<Item = Option<Positioned<Self>>>>(inner: I) -> Option<Self> {
         Some(Self::Lambda(inner.into_iter().collect::<Option<Vec<_>>>()?))
     }
 }
 
 fn literal() -> impl Parser<Token, Lit, Error = Simple<Token>> {
-    use Token::*;
     use token::Dir::*;
+    use Token::*;
     let int = filter_map(|span, tok| match tok {
         Num(n) => Ok(Lit::Num(n)),
         t => Err(Simple::expected_input_found(span, vec![], Some(t))),
     });
-    recursive(|lit| lit.repeated().at_least(1).delimited_by(Bracket(L), Bracket(R)).map(Lit::List).or(int))
+    recursive(|lit| {
+        lit.repeated()
+            .at_least(1)
+            .delimited_by(Bracket(L), Bracket(R))
+            .map(Lit::List)
+            .or(int)
+    })
 }
 
-fn parser() -> impl Parser<Token, Option<Vec<Sym>>, Error = Simple<Token>> {
+fn parser() -> impl Parser<Token, Option<Vec<Positioned<Sym>>>, Error = Simple<Token>> {
     use token::Dir::*;
     use Token::*;
     let var = filter_map(|span, tok| match tok {
@@ -62,7 +67,7 @@ fn parser() -> impl Parser<Token, Option<Vec<Sym>>, Error = Simple<Token>> {
     recursive(|instr| {
         instr
             .delimited_by(Brace(L), Brace(R))
-            .map(|v| Sym::lambda(v))
+            .map_with_span(|v, span| Sym::lambda(v).map(|l| l.spanned(span)))
             .or(just(Ident("K".to_string()))
                 .to(Sym::CombK)
                 .or(just(Ident("S".to_string())).to(Sym::CombS))
@@ -80,14 +85,17 @@ fn parser() -> impl Parser<Token, Option<Vec<Sym>>, Error = Simple<Token>> {
                 .or(just(Op("\\".to_string())).to(Sym::Filter))
                 .or(lit)
                 .or(var)
-                .map(Some))
+                .map_with_span(|s, span| Some(s.spanned(span))))
             .recover_with(nested_delimiters(Brace(L), Brace(R), [], |_| None))
             .repeated()
     })
     .map(|v| v.into_iter().collect::<Option<Vec<_>>>())
 }
 
-pub fn parse(src_id: impl Into<String>, input: &str) -> (Option<Vec<Sym>>, Vec<Report>) {
+pub fn parse(
+    src_id: impl Into<Reference>,
+    input: &str,
+) -> (Option<Vec<Positioned<Sym>>>, Vec<Report>) {
     let src_id = src_id.into();
     let slen = input.len();
     let (tokens, tokerr) = lexer().then_ignore(end()).parse_recovery(input);
@@ -100,16 +108,26 @@ pub fn parse(src_id: impl Into<String>, input: &str) -> (Option<Vec<Sym>>, Vec<R
             .then_ignore(end())
             .parse_recovery(Stream::from_iter(
                 slen..slen + 1,
-                tokens.into_iter().map(Into::into),
+                tokens
+                    .into_iter()
+                    .map(|tok| (tok.value, tok.pos.span.into())),
             ));
         let tokerr = tokerr
             .chain(
                 err.into_iter()
-                    .map(move |err| report_of_token_error(src_id.clone(), err)),
+                    .map(|err| report_of_token_error(src_id.clone(), err)),
             )
             .collect();
         if let Some(Some(instrs)) = instrs {
-            (Some(instrs), tokerr)
+            (
+                Some(
+                    instrs
+                        .into_iter()
+                        .map(|s| s.with_reference(src_id.clone()))
+                        .collect(),
+                ),
+                tokerr,
+            )
         } else {
             (None, tokerr)
         }
@@ -121,19 +139,24 @@ pub fn parse(src_id: impl Into<String>, input: &str) -> (Option<Vec<Sym>>, Vec<R
 #[cfg(test)]
 mod tests {
     use super::*;
-    use Sym::*;
+
     macro_rules! assert_parse {
-        ($input:expr, [$($e:expr),*]) => {
-            {
-                use ariadne::Source;
-                let input = $input;
-                let (res, err) = parse("<test>", input);
-                for report in err {
-                    report.eprint(("<test>".into(), Source::from(input))).unwrap();
-                }
-                assert_eq!(res, Some(vec![$($e),*]));
-            }
-        };
+        ($input:expr, [$($e:expr),*]) => {{
+            let input = $input;
+            let (res, err) = parse("<test>", input);
+            insta::assert_display_snapshot!(err
+                .into_iter()
+                .map(|r| {
+                    use ariadne::Source;
+                    let mut s = ::std::io::Cursor::new(Vec::new());
+                    r.write(("<test>".into(), Source::from(input)), &mut s)
+                        .unwrap();
+                    String::from_utf8_lossy(&s.into_inner()).to_string()
+                })
+                .collect::<Vec<_>>()
+                .join("\n"));
+            insta::assert_debug_snapshot!(res);
+        }};
     }
     #[test]
     fn test_ski() {

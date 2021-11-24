@@ -1,5 +1,5 @@
 [package]
-name = "repl"
+name = "utils"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,3 @@ edition = "2021"
 
 [dependencies]
 ariadne = "*"
-computations = { path = "../computations" }
-parser = { path = "../parser" }
-rustyline = "9"
-utils = { path = "../utils" }

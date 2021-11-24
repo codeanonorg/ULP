@@ -1,15 +1,13 @@
-use ariadne::{ReportKind, Source};
+use ariadne::{Color, ReportKind, Source};
 use computations::check;
 use parser::parse;
-use rustyline::{Editor, error::ReadlineError};
-use std::ops::Range;
+use rustyline::{error::ReadlineError, Editor};
+use utils::{PositionedExt, Reference};
 
-const HISTORYFILE: &'static str = "/tmp/ulp-repl.history";
-
-type SrcId = (String, Range<usize>);
-type Report = ariadne::Report<SrcId>;
+const HISTORYFILE: &str = "/tmp/ulp-repl.history";
 
 fn main() {
+    let reference = Reference::from("<repl>");
     let mut rl = Editor::<()>::new();
     rl.load_history(HISTORYFILE).unwrap_or(());
 
@@ -17,23 +15,25 @@ fn main() {
         match rl.readline("ULP> ") {
             Ok(line) => {
                 rl.add_history_entry(&line);
-                let (ast, errors) = parse("<repl>", &line);
+                let (ast, errors) = parse(reference.clone(), &line);
                 for err in errors {
-                    err.eprint(("<repl>".to_string(), Source::from(&line))).unwrap();
+                    err.eprint(("<repl>".into(), Source::from(&line))).unwrap();
                 }
                 if let Some(ast) = ast {
                     match check(ast) {
                         Ok(comp) => println!("Computation {:#?}", comp),
-                        Err(err) => Report::build(ReportKind::Error, "<repl>", 0)
-                            .with_message(format!("Check error: {}", err))
+                        Err(err) => "Check error"
+                            .positioned(err.pos.clone().with_reference("<repl>"))
+                            .into_report(ReportKind::Error)
+                            .with_label(err.into_label().with_color(Color::Red))
                             .with_note("The structure is correct, however ULP could not figure out how to compute the expression.")
                             .finish()
-                            .eprint(("<repl>".to_string(), Source::from(&line)))
+                            .eprint((reference.clone(), Source::from(&line)))
                             .unwrap(),
                     }
                 }
-            },
-            Err(ReadlineError::Interrupted) => {},
+            }
+            Err(ReadlineError::Interrupted) => {}
             Err(ReadlineError::Eof) => break,
             Err(err) => eprintln!("Fatal error: {}", err),
         }
