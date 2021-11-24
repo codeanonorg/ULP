@@ -10,3 +10,4 @@ ariadne = "*"
 computations = { path = "../computations" }
 parser = { path = "../parser" }
 rustyline = "9"
+utils = { path = "../utils" }

@@ -1,15 +1,13 @@
-use ariadne::{Label, ReportKind, Source};
+use ariadne::{Color, ReportKind, Source};
 use computations::check;
 use parser::parse;
 use rustyline::{error::ReadlineError, Editor};
-use std::ops::Range;
+use utils::{PositionedExt, Reference};
 
 const HISTORYFILE: &str = "/tmp/ulp-repl.history";
 
-type SrcId = (String, Range<usize>);
-type Report = ariadne::Report<SrcId>;
-
 fn main() {
+    let reference = Reference::from("<repl>");
     let mut rl = Editor::<()>::new();
     rl.load_history(HISTORYFILE).unwrap_or(());
 
@@ -17,20 +15,20 @@ fn main() {
         match rl.readline("ULP> ") {
             Ok(line) => {
                 rl.add_history_entry(&line);
-                let (ast, errors) = parse("<repl>", &line);
+                let (ast, errors) = parse(reference.clone(), &line);
                 for err in errors {
-                    err.eprint(("<repl>".to_string(), Source::from(&line)))
-                        .unwrap();
+                    err.eprint(("<repl>".into(), Source::from(&line))).unwrap();
                 }
                 if let Some(ast) = ast {
                     match check(ast) {
                         Ok(comp) => println!("Computation {:#?}", comp),
-                        Err(err) => Report::build(ReportKind::Error, "<repl>", err.span.start)
-                            .with_label(Label::new(("<repl>".into(), err.span)).with_color(ariadne::Color::Red).with_message(err.value.to_string()))
-                            .with_message("Check error")
+                        Err(err) => "Check error"
+                            .positioned(err.pos.clone().with_reference("<repl>"))
+                            .into_report(ReportKind::Error)
+                            .with_label(err.into_label().with_color(Color::Red))
                             .with_note("The structure is correct, however ULP could not figure out how to compute the expression.")
                             .finish()
-                            .eprint(("<repl>".to_string(), Source::from(&line)))
+                            .eprint((reference.clone(), Source::from(&line)))
                             .unwrap(),
                     }
                 }

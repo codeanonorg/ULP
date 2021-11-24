@@ -44,25 +44,57 @@ impl Span {
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Reference(Option<Rc<str>>);
+
+impl<'a> From<&'a str> for Reference {
+    fn from(s: &'a str) -> Self {
+        Self(Some(s.into()))
+    }
+}
+
+impl From<String> for Reference {
+    fn from(s: String) -> Self {
+        Self(Some(s.into()))
+    }
+}
+
+impl fmt::Display for Reference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(s) = self.0.as_deref() {
+            write!(f, "{}", s)
+        } else {
+            write!(f, "<unknown>")
+        }
+    }
+}
+
+impl Reference {
+    pub fn or(self, other: Self) -> Self {
+        Self(self.0.or(other.0))
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Position {
-    pub reference: Option<Rc<str>>,
+    pub reference: Reference,
     pub span: Span,
 }
 
 impl fmt::Display for Position {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}:{}",
-            self.reference.as_deref().unwrap_or("<unknown>"),
-            self.span
-        )
+        write!(f, "{}:{}", self.reference, self.span)
     }
 }
 
 impl Position {
-    pub fn with_reference<S: Into<Rc<str>>>(mut self, reference: S) -> Self {
-        self.reference = Some(reference.into());
+    pub fn spanned<S: Into<Span>>(span: S) -> Self {
+        Self {
+            span: span.into(),
+            ..Default::default()
+        }
+    }
+    pub fn with_reference<S: Into<Reference>>(mut self, reference: S) -> Self {
+        self.reference = reference.into();
         self
     }
 
@@ -74,8 +106,8 @@ impl Position {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Positioned<T> {
-    pos: Position,
-    value: T,
+    pub pos: Position,
+    pub value: T,
 }
 
 impl<T: fmt::Display> fmt::Display for Positioned<T> {
@@ -132,7 +164,7 @@ impl<T> Positioned<T> {
         self.value
     }
 
-    pub fn with_reference<S: Into<Rc<str>>>(self, reference: S) -> Self {
+    pub fn with_reference<S: Into<Reference>>(self, reference: S) -> Self {
         Self {
             pos: self.pos.with_reference(reference),
             value: self.value,
@@ -175,35 +207,16 @@ impl<T> Positioned<Option<T>> {
 }
 
 pub trait PositionedExt: Sized {
-    fn positioned<St: Into<Rc<str>>, Sp: Into<Span>>(
-        self,
-        span: Sp,
-        reference: St,
-    ) -> Positioned<Self> {
-        Positioned {
-            pos: Position {
-                reference: Some(reference.into()),
-                span: span.into(),
-            },
-            value: self,
-        }
+    fn positioned(self, pos: Position) -> Positioned<Self> {
+        Positioned { pos, value: self }
     }
 
     fn spanned<S: Into<Span>>(self, span: S) -> Positioned<Self> {
-        Positioned {
-            pos: Position::default().with_span(span),
-            value: self,
-        }
+        self.positioned(Position::spanned(span))
     }
 
-    fn referenced<S: Into<Rc<str>>>(self, reference: S) -> Positioned<Self> {
-        Positioned {
-            pos: Position {
-                reference: Some(reference.into()),
-                span: Span::default(),
-            },
-            value: self,
-        }
+    fn referenced<S: Into<Reference>>(self, reference: S) -> Positioned<Self> {
+        self.positioned(Position::default().with_reference(reference))
     }
 }
 

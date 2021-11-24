@@ -1,8 +1,6 @@
-use std::{ops::Deref, rc::Rc};
-
 use ariadne::ReportKind;
 
-use crate::{Position, Positioned};
+use crate::{Position, Positioned, Reference};
 
 pub type SourceId = Position;
 pub type Label = ariadne::Label<SourceId>;
@@ -10,7 +8,7 @@ pub type ReportBuilder = ariadne::ReportBuilder<SourceId>;
 pub type Report = ariadne::Report<SourceId>;
 
 impl ariadne::Span for Position {
-    type SourceId = Option<Rc<str>>;
+    type SourceId = Reference;
 
     fn source(&self) -> &Self::SourceId {
         &self.reference
@@ -30,10 +28,8 @@ impl<T: ToString> Positioned<T> {
         Report::build(kind, self.pos.reference, self.pos.span.start)
             .with_message(self.value.to_string())
     }
-}
 
-impl<T: ToString> Into<Label> for Positioned<T> {
-    fn into(self) -> Label {
+    pub fn into_label(self) -> Label {
         Label::new(self.pos).with_message(self.value.to_string())
     }
 }

@@ -1,8 +1,9 @@
 #[allow(dead_code)]
 mod trees;
 
-use parser::{Spanned, SpannedExt, Sym};
+use parser::Sym;
 use trees::{ComputationTree, Literal, UnOp};
+use utils::{Position, Positioned, PositionedExt};
 
 use crate::trees::{BinOp, Combinator};
 use thiserror::Error;
@@ -19,7 +20,7 @@ pub enum ComputationError {
     UnsupportedFeature(&'static str),
 }
 
-pub type Error = Spanned<ComputationError>;
+pub type Error = Positioned<ComputationError>;
 
 // States for our state machine
 // WaitForOp -> We are waiting for an operator as the next symbol
@@ -42,12 +43,10 @@ struct Accumulator {
 impl Accumulator {
     // Build a new accumulator containing only the symbol "s" viewed
     // as a computation tree
-    fn new(s: Spanned<&Sym>) -> Result<Self, Error> {
-        Self::to_tree(s).map(|acc| {
-            Accumulator {
-                state: State::WaitForOp,
-                acc,
-            }
+    fn new(s: Positioned<&Sym>) -> Result<Self, Error> {
+        Self::to_tree(s).map(|acc| Accumulator {
+            state: State::WaitForOp,
+            acc,
         })
     }
 
@@ -111,7 +110,7 @@ impl Accumulator {
     }
 
     /// Convert an arbitrary symbol to a computation tree
-    fn to_tree<'a>(s: Spanned<&Sym>) -> Result<ComputationTree, Error> {
+    fn to_tree<'a>(s: Positioned<&Sym>) -> Result<ComputationTree, Error> {
         match s.value {
             Sym::CombS | Sym::CombK | Sym::CombD | Sym::CombI => {
                 Ok(ComputationTree::CombOp(Self::to_comb(s.value)))
@@ -125,10 +124,10 @@ impl Accumulator {
             Sym::Literal(n) => Ok(ComputationTree::Lit(n.clone().into())),
             Sym::Var(v) => Ok(ComputationTree::Lit(Literal::Var(v.clone()))),
             Sym::Lambda(prog) => non_linear_check(
-                prog.iter().map(|s| &s.value).spanned(
+                prog.iter().map(|s| &s.value).positioned(
                     prog.iter()
-                        .map(|s| &s.span)
-                        .fold(0..0, |l, r| l.start..r.end),
+                        .map(|s| s.pos.clone())
+                        .fold(Position::default(), Position::merge),
                 ),
             )
             .map(|body| ComputationTree::Lambda {
@@ -140,7 +139,7 @@ impl Accumulator {
 
     /// Given an accumulator and a symbol, next computes a new accumulator
     /// and consume the symbol to extend the current computation tree.
-    fn next(self, s: Spanned<&Sym>) -> Result<Accumulator, Error> {
+    fn next(self, s: Positioned<&Sym>) -> Result<Accumulator, Error> {
         match self.state {
             State::WaitForOp => match s.value {
                 Sym::Map | Sym::Eq | Sym::Filter | Sym::Reduce | Sym::Add | Sym::And | Sym::Or => {
@@ -156,7 +155,7 @@ impl Accumulator {
                         lhs: Box::new(self.acc),
                     },
                 }),
-                _ => Err(ComputationError::ExpectedOperator.spanned(s.span)),
+                _ => Err(ComputationError::ExpectedOperator.positioned(s.pos)),
             },
             State::WaitForVal(op) => Self::to_tree(s).map(|tree| Accumulator {
                 state: State::WaitForOp,
@@ -171,45 +170,44 @@ impl Accumulator {
 }
 
 // Check that a sequence of symbols is well formed
-fn linear_check<'a, I: IntoIterator<Item = Spanned<&'a Sym>>>(
-    prog: Spanned<I>,
+fn linear_check<'a, I: IntoIterator<Item = Positioned<&'a Sym>>>(
+    prog: Positioned<I>,
 ) -> Result<ComputationTree, Error> {
     let mut it = prog.value.into_iter();
     let acc = Accumulator::new(
         it.next()
-            .ok_or(ComputationError::Empty.spanned(prog.span.clone()))?,
+            .ok_or(ComputationError::Empty.positioned(prog.pos.clone()))?,
     )?;
-    it.try_fold(acc, |acc, s| acc.next(s)).and_then(|a| {
-        // println!("debug {:?}", a);
-        a.finish()
-            .ok_or(ComputationError::SymbolsRemaining.spanned(prog.span))
-    })
+    let a = it.try_fold(acc, |acc, s| acc.next(s))?;
+    a.finish()
+        .ok_or(ComputationError::SymbolsRemaining.positioned(prog.pos))
 }
 
 // Check that a sequence of symbols is well formed (in the context of a lambda)
 fn non_linear_check<'a, I: IntoIterator<Item = &'a Sym>>(
-    prog: Spanned<I>,
+    prog: Positioned<I>,
 ) -> Result<ComputationTree, Error> {
-    Err(ComputationError::UnsupportedFeature("non_linear_check").spanned(prog.span))
+    Err(ComputationError::UnsupportedFeature("non_linear_check").positioned(prog.pos))
 }
 
 /// Check that an ULP program is well formed and returns its associated
 /// computation tree
-pub fn check(prog: Vec<Spanned<Sym>>) -> Result<ComputationTree, Error> {
-    let span = prog
+pub fn check(prog: Vec<Positioned<Sym>>) -> Result<ComputationTree, Error> {
+    let pos = prog
         .iter()
-        .map(|s| s.span.clone())
-        .fold(0..0, |l, r| l.start..r.end);
+        .map(|s| s.pos.clone())
+        .fold(Position::default(), Position::merge);
     if prog.is_empty() {
-        Err(ComputationError::Empty.spanned(span))
+        Err(ComputationError::Empty.positioned(pos))
     } else {
-        linear_check(prog.iter().map(|s| s.as_ref()).spanned(span))
+        linear_check(prog.iter().map(|s| s.as_ref()).positioned(pos))
     }
 }
 
 #[cfg(test)]
 mod test {
     use parser::*;
+    use utils::PositionedExt;
 
     use crate::check;
 
@@ -223,7 +221,12 @@ mod test {
             Sym::Iota,
             Sym::Literal(Lit::Num("2".to_string())),
         ];
-        let res = check(prog.into_iter().map(|s| s.spanned(0..0)).collect());
+        let res = check(
+            prog.into_iter()
+                .enumerate()
+                .map(|(i, s)| s.spanned(i..i + 1))
+                .collect(),
+        );
         println!("result: {:?}", res);
         assert!(res.is_ok())
     }
@@ -237,9 +240,14 @@ mod test {
             Sym::Iota,
             Sym::Literal(Lit::Num("2".to_string())),
         ];
-        let err = check(prog.into_iter().map(|s| s.spanned(0..0)).collect());
-        println!("result: {:?}", err);
-        assert!(err.is_err())
+        let res = check(
+            prog.into_iter()
+                .enumerate()
+                .map(|(i, s)| s.spanned(i..i + 1))
+                .collect(),
+        );
+        println!("result: {:?}", res);
+        assert!(res.is_err())
     }
 
     #[test]
@@ -252,8 +260,13 @@ mod test {
             Sym::Iota,
             Sym::Literal(Lit::Num("2".to_string())),
         ];
-        let err = check(prog.into_iter().map(|s| s.spanned(0..0)).collect());
-        println!("result: {:?}", err);
-        assert!(err.is_ok())
+        let res = check(
+            prog.into_iter()
+                .enumerate()
+                .map(|(i, s)| s.spanned(i..i + 1))
+                .collect(),
+        );
+        println!("result: {:?}", res);
+        assert!(res.is_err())
     }
 }

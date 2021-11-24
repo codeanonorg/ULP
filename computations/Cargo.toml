@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 parser = { path = "../parser" }
 thiserror = "1.0.30"
+utils = { path = "../utils" }

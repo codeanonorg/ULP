@@ -10,7 +10,7 @@ use chumsky::{
 pub use Dir::*;
 pub use Token::*;
 
-use crate::spanned::{Spanned, SpannedExt};
+use utils::{Positioned, PositionedExt};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Dir {
@@ -44,9 +44,8 @@ impl fmt::Display for Token {
     }
 }
 
-pub(crate) fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
-    let op = filter(char::is_ascii_punctuation)
-        .map(|c| Op(c.to_string()));
+pub(crate) fn lexer() -> impl Parser<char, Vec<Positioned<Token>>, Error = Simple<char>> {
+    let op = filter(char::is_ascii_punctuation).map(|c| Op(c.to_string()));
     let ident = ident().map(Ident);
     let num = int(10).map(Num);
     let parens = just('(').to(Paren(L)).or(just(')').to(Paren(R)));
